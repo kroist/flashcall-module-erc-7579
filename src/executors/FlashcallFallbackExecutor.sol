@@ -15,15 +15,17 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
     bytes32 private constant CALLBACK_SUCCESS = keccak256('ERC3156FlashBorrower.onFlashLoan');
 
     address private fallbackHandler;
-    address private authorizedInitiator;
+    address private authorizedLender;
     IERC20 private token;
 
     constructor (
         address _fallbackHandler,
-        address _token
+        address _token,
+        address _authorizedLender
     ) {
         fallbackHandler = _fallbackHandler;
         token = IERC20(_token);
+        authorizedLender = _authorizedLender;
     }
 
     function handle(
@@ -56,7 +58,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
     function aaveBorrowAction(
         uint256 toBorrowTokenAmount,
         address account
-    ) internal pure returns (ExecutorAction memory action) {
+    ) internal view returns (ExecutorAction memory action) {
         action = ExecutorAction({
             to: payable(address(token)),
             value: 0,
@@ -73,9 +75,8 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         uint256 fee,
         bytes memory data
     ) internal {
-
-        if (sender != authorizedInitiator) revert();
-        if (initiator != authorizedInitiator) revert();
+        if (sender != authorizedLender) revert();
+        if (initiator != account) revert();
         if (_token != address(token)) revert();
         (IExecutorManager manager, address to, bytes memory callData) =
             abi.decode(data, (IExecutorManager, address, bytes));
@@ -90,7 +91,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
 
         ExecutorAction memory approveDebt = ERC20ModuleKit.approveAction(
             token,
-            authorizedInitiator,
+            authorizedLender,
             amount+fee
         );
         manager.exec(account, approveDebt);
