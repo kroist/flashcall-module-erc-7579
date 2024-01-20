@@ -16,16 +16,19 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
 
     address private fallbackHandler;
     address private authorizedLender;
+    address private aavePool;
     IERC20 private token;
 
     constructor (
         address _fallbackHandler,
         address _token,
-        address _authorizedLender
+        address _authorizedLender,
+        address _aavePool
     ) {
         fallbackHandler = _fallbackHandler;
         token = IERC20(_token);
         authorizedLender = _authorizedLender;
+        aavePool = _aavePool;
     }
 
     function handle(
@@ -60,7 +63,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         address account
     ) internal view returns (ExecutorAction memory action) {
         action = ExecutorAction({
-            to: payable(address(token)),
+            to: payable(address(aavePool)),
             value: 0,
             data: abi.encodeWithSelector(IPoolV3.borrow.selector, address(token), toBorrowTokenAmount, 1, 0, account)
         });
@@ -80,7 +83,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         if (_token != address(token)) revert();
         (IExecutorManager manager, address to, bytes memory callData) =
             abi.decode(data, (IExecutorManager, address, bytes));
-        // manager.exec(account, to, callData);
+        manager.exec(account, to, callData);
 
         uint256 haveTokenAmount = token.balanceOf(account);
         uint256 toBorrowTokenAmount = amount + fee - haveTokenAmount;
