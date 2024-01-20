@@ -96,6 +96,7 @@ contract FlashcallFallbackExecutorTest is Test, RhinestoneModuleKit {
             address(flashloanLender),
             address(aavePool)
         );
+        console2.log("fallbackHandler", instance.fallbackHandler);
 
         vm.label(address(flashcallFallbackExecutor), "flashcallFallbackExecutor");
 
@@ -126,7 +127,7 @@ contract FlashcallFallbackExecutorTest is Test, RhinestoneModuleKit {
             1000,
             prependedCalldata
         );
-        
+
         // Assert that target has a balance of 1 wei
         assertEq(token.balanceOf(target), 123);
         assertEq(token.balanceOf(instance.account), 0);

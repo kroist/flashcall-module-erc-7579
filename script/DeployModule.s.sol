@@ -5,29 +5,35 @@ import "forge-std/Script.sol";
 import { RegistryDeployer } from "modulekit/modulekit/deployment/RegistryDeployer.sol";
 
 // Import modules here
-import { ValidatorTemplate } from "../src/validators/ValidatorTemplate.sol";
+import { FlashcallFallbackExecutor } from "../src/executors/FlashcallFallbackExecutor.sol";
 
 /// @title DeployModuleScript
 contract DeployModuleScript is Script, RegistryDeployer {
     function run() public {
         // Setup module bytecode, deploy params, and data
-        bytes memory bytecode = type(ValidatorTemplate).creationCode;
-        bytes memory deployParams = "";
-        bytes memory data = "";
 
         // Get private key for deployment
         vm.startBroadcast(vm.envUint("PK"));
 
         // Deploy module
-        address module = deployModule({
-            code: bytecode,
-            deployParams: deployParams,
-            salt: bytes32(0),
-            data: data
-        });
+        // address module = deployModule({
+        //     code: bytecode,
+        //     deployParams: deployParams,
+        //     salt: bytes32(0),
+        //     data: data
+        // });
+        address token = 0xc4bF5CbDaBE595361438F8c6a187bDc330539c60;
+        address flashloanLender = 0xB5d0ef1548D9C70d3E7a96cA67A2d7EbC5b1173E;
+        address aavePool = 0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951;
+
+        FlashcallFallbackExecutor executor = new FlashcallFallbackExecutor(
+            0x39569Bfb835B4577C55c1AAC4B3Fe9fBf3bcDd57, // _fallbackHandler
+            0xc4bF5CbDaBE595361438F8c6a187bDc330539c60,
+            flashloanLender,
+            aavePool
+        );
 
         // Stop broadcast and log module address
         vm.stopBroadcast();
-        console.log("Module deployed at: %s", module);
     }
 }
