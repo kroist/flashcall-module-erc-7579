@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import { IPoolV3 } from "modulekit/modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
-import { DataTypes } from "modulekit/modulekit/integrations/interfaces/aaveV3/DataTypes.sol";
-import { IPoolAddressesProvider } from "modulekit/modulekit/integrations/interfaces/aaveV3/IPoolAddressesProvider.sol";
+import { IPoolV3 } from "modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
+import { DataTypes } from "modulekit/integrations/interfaces/aaveV3/DataTypes.sol";
+import { IPoolAddressesProvider } from "modulekit/integrations/interfaces/aaveV3/IPoolAddressesProvider.sol";
 import { MockERC20 } from "forge-std/mocks/MockERC20.sol";
 
 contract MockedPool is IPoolV3 {

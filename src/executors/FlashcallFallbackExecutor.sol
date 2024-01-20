@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 
-import { ExecutorBase } from "modulekit/modulekit/ExecutorBase.sol";
-import { IExecutorManager, ExecutorAction, ModuleExecLib } from "modulekit/modulekit/IExecutor.sol";
-import { IFallbackMethod } from "modulekit/common/FallbackHandler.sol";
-import { ERC20ModuleKit } from "modulekit/modulekit/integrations/ERC20Actions.sol";
+import { IFallbackMethod } from "modulekit/core/ExtensibleFallbackHandler.sol";
+import { ERC20Integration } from "modulekit/integrations/ERC20.sol";
 import { IERC3156FlashBorrower } from "openzeppelin-contracts/contracts/interfaces/IERC3156FlashBorrower.sol";
 import { IERC20 } from "forge-std/interfaces/IERC20.sol";
-import { IPoolV3 } from "modulekit/modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
+import { IPoolV3 } from "modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
+import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
+// import { IERC7579Execution } from "modulekit/Accounts.sol";
+import { IERC7579Execution } from "modulekit/external/ERC7579.sol";
 
-contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
-    using ModuleExecLib for IExecutorManager;
+contract FlashcallFallbackExecutor is IFallbackMethod, ERC7579ExecutorBase {
 
     bytes32 private constant CALLBACK_SUCCESS = keccak256('ERC3156FlashBorrower.onFlashLoan');
 
@@ -31,6 +31,9 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         aavePool = _aavePool;
     }
 
+    function onInstall(bytes calldata data) external {}
+    function onUninstall(bytes calldata data) external {}
+
     function handle(
         address account,
         address sender,
@@ -38,7 +41,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         bytes calldata data
     )
         external
-        returns (bytes memory result) {
+        returns (bytes memory result){
         if (data.length < 4) revert();
         if (msg.sender != fallbackHandler) revert();
 
@@ -55,17 +58,16 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
             _onFlashloan(account, sender, initiator, token, amount, fee, data);
             return abi.encode(CALLBACK_SUCCESS);
         }
-        
     }
 
     function aaveBorrowAction(
         uint256 toBorrowTokenAmount,
         address account
-    ) internal view returns (ExecutorAction memory action) {
-        action = ExecutorAction({
-            to: payable(address(aavePool)),
+    ) internal view returns (IERC7579Execution.Execution memory exec) {
+        exec = IERC7579Execution.Execution({
+            target: payable(address(aavePool)),
             value: 0,
-            data: abi.encodeWithSelector(IPoolV3.borrow.selector, address(token), toBorrowTokenAmount, 1, 0, account)
+            callData: abi.encodeWithSelector(IPoolV3.borrow.selector, address(token), toBorrowTokenAmount, 1, 0, account)
         });
     }
 
@@ -81,23 +83,32 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
         if (sender != authorizedLender) revert();
         if (initiator != account) revert();
         if (_token != address(token)) revert();
-        (IExecutorManager manager, address to, bytes memory callData) =
-            abi.decode(data, (IExecutorManager, address, bytes));
-        manager.exec(account, to, callData);
+        (address to, bytes memory callData) =
+            abi.decode(data, (address, bytes));
+        
+        IERC7579Execution.Execution[] memory exec = new IERC7579Execution.Execution[](1);
+        exec[0] = IERC7579Execution.Execution({
+            target: to,
+            value: 0,
+            callData: callData
+        });
+        _execute(account, exec);
 
         uint256 haveTokenAmount = token.balanceOf(account);
         uint256 toBorrowTokenAmount = amount + fee - haveTokenAmount;
         if (toBorrowTokenAmount > 0) {
-            ExecutorAction memory aaveBorrow = aaveBorrowAction(toBorrowTokenAmount, account);
-            manager.exec(account, aaveBorrow);
+            IERC7579Execution.Execution[] memory aaveBorrow  = new IERC7579Execution.Execution[](1);
+            aaveBorrow[0] = aaveBorrowAction(toBorrowTokenAmount, account);
+            _execute(account, aaveBorrow);
         }
 
-        ExecutorAction memory approveDebt = ERC20ModuleKit.approveAction(
+        IERC7579Execution.Execution[] memory approveDebt  = new IERC7579Execution.Execution[](1);
+        approveDebt[0] = ERC20Integration.approve(
             token,
             authorizedLender,
             amount+fee
         );
-        manager.exec(account, approveDebt);
+        _execute(account, approveDebt);
 
     }
 
@@ -105,7 +116,7 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
      * @notice A funtion that returns name of the executor
      * @return name string name of the executor
      */
-    function name() external view override returns (string memory name) {
+    function name() external pure override returns (string memory name) {
         name = "ExecutorTemplate";
     }
 
@@ -113,30 +124,12 @@ contract FlashcallFallbackExecutor is ExecutorBase, IFallbackMethod {
      * @notice A funtion that returns version of the executor
      * @return version string version of the executor
      */
-    function version() external view override returns (string memory version) {
+    function version() external pure override returns (string memory version) {
         version = "0.0.1";
     }
 
-    /**
-     * @notice A funtion that returns version of the executor.
-     * @return providerType uint256 Type of metadata provider
-     * @return location bytes
-     */
-    function metadataProvider()
-        external
-        view
-        override
-        returns (uint256 providerType, bytes memory location)
-    {
-        providerType = 0;
-        location = "";
+    function isModuleType(uint256 typeID) external view returns (bool) {
+        return typeID == 2;
     }
 
-    /**
-     * @notice A function that indicates if the executor requires root access to a Safe.
-     * @return requiresRootAccess True if root access is required, false otherwise.
-     */
-    function requiresRootAccess() external view override returns (bool requiresRootAccess) {
-        requiresRootAccess = false;
-    }
 }

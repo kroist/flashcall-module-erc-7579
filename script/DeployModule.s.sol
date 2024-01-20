@@ -2,13 +2,12 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Script.sol";
-import { RegistryDeployer } from "modulekit/modulekit/deployment/RegistryDeployer.sol";
 
 // Import modules here
 import { FlashcallFallbackExecutor } from "../src/executors/FlashcallFallbackExecutor.sol";
 
 /// @title DeployModuleScript
-contract DeployModuleScript is Script, RegistryDeployer {
+contract DeployModuleScript is Script {
     function run() public {
         // Setup module bytecode, deploy params, and data
 

@@ -3,20 +3,19 @@ pragma solidity ^0.8.19;
 
 import { Test } from "forge-std/Test.sol";
 import { console2 } from "forge-std/console2.sol";
-import {
-    RhinestoneModuleKit,
-    RhinestoneModuleKitLib,
-    RhinestoneAccount
-} from "modulekit/test/utils/biconomy-base/RhinestoneModuleKit.sol";
-import { ExecutorTemplate } from "../../src/executors/ExecutorTemplate.sol";
+import "modulekit/ModuleKit.sol";
+import "modulekit/Modules.sol";
+import "modulekit/Helpers.sol";
+import "modulekit/Mocks.sol";
 import { FlashcallFallbackExecutor } from "../../src/executors/FlashcallFallbackExecutor.sol";
 import { MockERC20 } from "forge-std/mocks/MockERC20.sol";
 import { IERC3156FlashLender } from "openzeppelin-contracts/contracts/interfaces/IERC3156FlashLender.sol";
 import { IERC3156FlashBorrower } from "openzeppelin-contracts/contracts/interfaces/IERC3156FlashBorrower.sol";
-import { ERC20ModuleKit } from "modulekit/modulekit/integrations/ERC20Actions.sol";
-import { ExecutorAction } from "modulekit/modulekit/IExecutor.sol";
-import { IPoolV3 } from "modulekit/modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
+import { ERC20Integration } from "modulekit/integrations/ERC20.sol";
+import { IPoolV3 } from "modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
 import { MockedPool } from "../mocked/MockedPool.sol";
+import { ERC7579BootstrapConfig } from "modulekit/external/ERC7579.sol";
+import { ModuleKitFallbackHandler } from "modulekit/test/ModuleKitFallbackHandler.sol";
 
 contract MockedLender is IERC3156FlashLender {
 
@@ -56,27 +55,29 @@ contract MockedLender is IERC3156FlashLender {
 
 
 contract FlashcallFallbackExecutorTest is Test, RhinestoneModuleKit {
-    using RhinestoneModuleKitLib for RhinestoneAccount;
+    using ModuleKitUserOp for RhinestoneAccount;
+    using ModuleKitHelpers for RhinestoneAccount;
+    using ModuleKitHelpers for UserOpData;
 
     RhinestoneAccount instance;
     FlashcallFallbackExecutor flashcallFallbackExecutor;
     MockERC20 token;
     MockedLender flashloanLender;
     IPoolV3 aavePool;
+    MockValidator mockedValidator;
 
     function setUp() public {
+
+        init();
         // Setup account
-        instance = makeRhinestoneAccount("1");
-        vm.deal(instance.account, 10 ether);
-        vm.label(instance.account, "account");
 
 
         token = new MockERC20();
         token.initialize("Mock Token", "MTK", 18);
 
-        vm.deal(instance.account, 100 ether);
+        mockedValidator = new MockValidator();
+        vm.label(address(mockedValidator), "mockedValidator");
 
-        console2.log("account address", instance.account);
 
         flashloanLender = new MockedLender(address(token));
         deal(address(token), address(flashloanLender), 1000000);
@@ -87,28 +88,45 @@ contract FlashcallFallbackExecutorTest is Test, RhinestoneModuleKit {
         vm.label(address(aavePool), "aavePool");
 
 
-        // token.mint(address(flashloanLender), 1000000);
 
         // Setup executor
         flashcallFallbackExecutor = new FlashcallFallbackExecutor(
-            instance.fallbackHandler,
+            address(auxiliary.fallbackHandler),
             address(token),
             address(flashloanLender),
             address(aavePool)
         );
-        console2.log("fallbackHandler", instance.fallbackHandler);
 
         vm.label(address(flashcallFallbackExecutor), "flashcallFallbackExecutor");
 
-        // Add executor to account
-        instance.addExecutor(address(flashcallFallbackExecutor));
 
-
-        instance.addFallback({
-            handleFunctionSig: IERC3156FlashBorrower.onFlashLoan.selector,
-            isStatic: false,
+        ExtensibleFallbackHandler.Params[] memory params = new ExtensibleFallbackHandler.Params[](1);
+        params[0] = ExtensibleFallbackHandler.Params({
+            selector: IERC3156FlashBorrower.onFlashLoan.selector,
+            fallbackType: ExtensibleFallbackHandler.FallBackType.Dynamic,
             handler: address(flashcallFallbackExecutor)
         });
+
+        ERC7579BootstrapConfig[] memory validators = 
+            makeBootstrapConfig(address(mockedValidator), abi.encode(""));
+        ERC7579BootstrapConfig[] memory executors =
+            makeBootstrapConfig(address(flashcallFallbackExecutor), abi.encode(""));
+        ERC7579BootstrapConfig memory hook = _emptyConfig();
+        ERC7579BootstrapConfig memory fallBack =
+            _makeBootstrapConfig(address(auxiliary.fallbackHandler), abi.encode(params));
+
+        instance = makeRhinestoneAccount("account", validators, executors, hook, fallBack);
+        // instance.installFallback(
+        //     IERC3156FlashBorrower.onFlashLoan.selector,
+        //     false,
+        //     address(flashcallFallbackExecutor)
+        // );
+
+        console2.log("account address", instance.account);
+        vm.deal(instance.account, 10 ether);
+        vm.label(instance.account, "account");
+        vm.deal(instance.account, 100 ether);
+
 
     }
 
@@ -120,13 +138,24 @@ contract FlashcallFallbackExecutorTest is Test, RhinestoneModuleKit {
 
         vm.prank(instance.account);
         bytes memory origCalldata = abi.encodeWithSelector(token.transfer.selector, target, 123);
-        bytes memory prependedCalldata = abi.encode(instance.aux.executorManager, address(token), origCalldata);
-        flashloanLender.flashLoan(
-            IERC3156FlashBorrower(instance.account),
-            address(token),
-            1000,
-            prependedCalldata
-        );
+        bytes memory prependedCalldata = abi.encode(address(token), origCalldata);
+
+        UserOpData memory userOpData = instance.getExecOps({
+            target: address(flashloanLender),
+            value: 0,
+            callData: abi.encodeCall(
+                MockedLender.flashLoan,
+                    (
+                        IERC3156FlashBorrower(instance.account),
+                        address(token),
+                        1000, 
+                        prependedCalldata
+                    )
+                ),
+            txValidator: address(defaultValidator)
+        });
+
+        userOpData.execUserOps();
 
         // Assert that target has a balance of 1 wei
         assertEq(token.balanceOf(target), 123);
