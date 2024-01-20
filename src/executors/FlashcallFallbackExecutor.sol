@@ -67,7 +67,7 @@ contract FlashcallFallbackExecutor is IFallbackMethod, ERC7579ExecutorBase {
         exec = IERC7579Execution.Execution({
             target: payable(address(aavePool)),
             value: 0,
-            callData: abi.encodeWithSelector(IPoolV3.borrow.selector, address(token), toBorrowTokenAmount, 1, 0, account)
+            callData: abi.encodeWithSelector(IPoolV3.borrow.selector, address(token), toBorrowTokenAmount, 2, 0, account)
         });
     }
 
