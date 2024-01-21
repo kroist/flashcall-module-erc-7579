@@ -7,7 +7,6 @@ import { IERC3156FlashBorrower } from "openzeppelin-contracts/contracts/interfac
 import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { IPoolV3 } from "modulekit/integrations/interfaces/aaveV3/IPoolV3.sol";
 import { ERC7579ExecutorBase } from "modulekit/Modules.sol";
-// import { IERC7579Execution } from "modulekit/Accounts.sol";
 import { IERC7579Execution } from "modulekit/external/ERC7579.sol";
 
 contract FlashcallFallbackExecutor is IFallbackMethod, ERC7579ExecutorBase {
@@ -117,7 +116,7 @@ contract FlashcallFallbackExecutor is IFallbackMethod, ERC7579ExecutorBase {
      * @return name string name of the executor
      */
     function name() external pure override returns (string memory name) {
-        name = "ExecutorTemplate";
+        name = "FlashcallFallbackExecutor";
     }
 
     /**
